@@ -72,11 +72,19 @@ print(datos[variables + [OBJETIVO]].corr()[OBJETIVO].loc[variables].round(4))
 # no mide por sí sola la capacidad de anticipar picos dentro de cada cantón.
 
 # Paso 5: tres hallazgos que cambian cómo preparar el modelo.
+# Consultas de respaldo: groupby y correlación para el hallazgo 1;
+# filtro de faltantes para el hallazgo 2; filtro y groupby para el hallazgo 3.
 print("\nHallazgo 1: los cantones tienen escalas de demanda diferentes.")
 resumen_canton = con_objetivo.groupby(["cod_canton", "canton"])[OBJETIVO].agg(
     promedio="mean", maximo="max", observaciones="size"
 )
 print(resumen_canton.sort_values("promedio", ascending=False).head(10).round(2))
+print("Rango de promedios por cantón:", resumen_canton["promedio"].agg(["min", "max"]).round(2))
+# Comparamos la relación global con la relación al descontar la media de
+# cada cantón: una correlación global alta puede reflejar su escala de demanda.
+centrados = pares[[PREDICTORA, OBJETIVO]] - pares.groupby("cod_canton")[[PREDICTORA, OBJETIVO]].transform("mean")
+print("Correlación global promedio previo / objetivo:", round(pares[PREDICTORA].corr(pares[OBJETIVO]), 4))
+print("Correlación descontando la media por cantón:", round(centrados[PREDICTORA].corr(centrados[OBJETIVO]), 4))
 print("Cantones con al menos un atípico global:", fuera["cod_canton"].nunique())
 print("No eliminar estos valores por IQR global: revisar el cantón y definir su umbral con train.")
 
@@ -84,10 +92,26 @@ print("\nHallazgo 2: los faltantes temporales tienen una causa estructural.")
 temporales = ["lag_1d", "lag_7d", "lag_14d", "lag_28d", "media_prev_7d",
               "media_prev_28d", "obj_n_emergencias_t3", "obj_n_emergencias_t7"]
 print(datos[temporales].isna().sum())
+# Verificamos si los nulos coinciden exactamente con los bordes de cada serie.
+ordenados = datos.sort_values(["cod_canton", "fecha"])
+posicion = ordenados.groupby("cod_canton").cumcount()
+tamano = ordenados.groupby("cod_canton")["fecha"].transform("size")
+for columna, ventana in {
+    "lag_1d": 1, "lag_7d": 7, "lag_14d": 14, "lag_28d": 28,
+    "media_prev_7d": 7, "media_prev_28d": 28,
+    "obj_n_emergencias_t3": -3, "obj_n_emergencias_t7": -7,
+}.items():
+    esperado = posicion < ventana if ventana > 0 else posicion >= tamano + ventana
+    faltantes = ordenados.loc[ordenados[columna].isna(), ["cod_canton", "fecha"]]
+    discrepancias = (ordenados[columna].isna() != esperado).sum()
+    print(f"{columna}: {len(faltantes)} faltantes; {discrepancias} discrepancias con los bordes esperados")
 print("Filas con objetivo y promedio previo disponibles:", len(pares))
 print("Respetar el calentamiento de las ventanas y el final sin etiqueta; no rellenar con cero.")
 
 print("\nHallazgo 3: enero de 2024 está marcado como período anómalo por el pipeline.")
+anomalos = datos.loc[datos["es_periodo_anomalo"], ["periodo", "cod_canton", "n_emergencias"]]
+print("Períodos marcados y cantidad de filas:")
+print(anomalos.groupby("periodo").size())
 mensual = datos.groupby("periodo").agg(
     total_emergencias=("n_emergencias", "sum"),
     promedio_canton_dia=("n_emergencias", "mean"),

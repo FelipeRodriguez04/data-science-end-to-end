@@ -32,6 +32,13 @@ print(f"\nViajes con tarifa de 70 USD: {len(tarifa_fija)}")
 print("Zonas de los viajes con tarifa de 70 USD:")
 print(tarifa_fija.groupby(["zona_origen", "zona_destino"]).size())
 
+# La columna de puntos en x=0 también se aparta de la tendencia general.
+# Se cuenta para investigarla; todavía no es un error confirmado.
+distancia_cero = limpios.loc[
+    limpios["distancia_km"].eq(0) & limpios["tarifa"].gt(0)
+]
+print(f"Viajes con distancia 0 y tarifa positiva: {len(distancia_cero)}")
+
 # 3. Incluir también los viajes sin método de pago registrado.
 propinas_por_pago = limpios.groupby("metodo_pago", dropna=False).agg(
     propina_promedio=("propina", "mean"),
