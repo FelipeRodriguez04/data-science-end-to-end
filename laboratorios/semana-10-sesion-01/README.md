@@ -95,6 +95,33 @@ _(tu respuesta)_
 
 Usa tu pipeline de la Semana 9, Sesión 2, con la misma división de entrenamiento y prueba. Esta vez no hay plantilla: escribe el script tú.
 
+Proyecto: predecir el número de emergencias por cantón en t+3, al cierre de t
+(`obj_n_emergencias_t3`). Se conserva el pipeline de la Semana 9, Sesión 2:
+imputación por mediana y escalado de numéricas, imputación y one-hot del cantón,
+y variables de calendario sin cambios. La métrica es MAE, en emergencias por
+cantón y día; un valor menor indica mejor predicción.
+
+Esta es una práctica exploratoria de predicción de volumen. El entregable final
+del proyecto plantea probabilidades de demanda alta a t+3 y t+7: queda pendiente
+calcular el P90 por cantón y día de la semana solo con entrenamiento, construir
+las etiquetas y evaluar clasificadores con PR-AUC, precisión y recall frente al
+baseline estacional. Los resultados de MAE de esta práctica no evalúan esas alertas.
+
+Los archivos están en la carpeta `proyecto` de esta sesión:
+[`modelos_proyecto.py`](./proyecto/modelos_proyecto.py)
+y [`resultados_proyecto.csv`](./proyecto/resultados_proyecto.csv).
+Desde la raíz del repositorio:
+
+```bash
+python3 laboratorios/semana-10-sesion-01/proyecto/modelos_proyecto.py
+```
+
+Se usan las mismas 337.120 filas de entrenamiento (2021-07-01 a 2025-08-13)
+y 84.448 de prueba (2025-08-17 a 2026-08-28), con 234 columnas preparadas.
+Se excluyen 672 filas sin objetivo y 672 filas de separación temporal para que
+las etiquetas de entrenamiento ocurran antes del corte del 2025-08-17.
+Cada modelo ajusta la preparación exclusivamente con entrenamiento.
+
 ### Entregable 1: `modelos_proyecto.py`
 
 Un script, en la carpeta de tu proyecto, que entrene con tu pipeline:
@@ -111,19 +138,55 @@ Una fila por modelo, con la métrica de tu proyecto en entrenamiento y en prueba
 
 **¿Cuál es tu línea base, y por qué esa y no otra?**
 
-_(tu respuesta)_
+Uso `DummyRegressor(strategy="median")`, que predice la mediana del objetivo
+de entrenamiento para todos los cantones. El objetivo es un conteo numérico,
+por lo que corresponde regresión. La mediana minimiza el error absoluto de
+una predicción constante y es coherente con MAE. Sirve como referencia mínima
+sin utilizar las features; no captura las diferencias entre cantones ni la
+estacionalidad. Una regla temporal por cantón sería una referencia adicional
+más exigente para una evaluación posterior.
 
 **¿Alguno de tus modelos se sobreajusta? Muestra la evidencia con números de tu tabla.**
 
-_(tu respuesta)_
+El bosque tiene una brecha positiva pequeña: MAE de 5,5056 en entrenamiento
+y 5,6328 en prueba, una diferencia de 0,1272 emergencias (2,31% respecto al
+error de entrenamiento). Es una señal de un ajuste ligeramente mayor a train,
+pero no muestra un sobreajuste fuerte en esta partición temporal. Los modelos
+lineales y la línea base tienen brechas negativas; eso puede ocurrir por las
+diferencias entre períodos y no implica fuga de información por sí solo.
+
+| Modelo | MAE entrenamiento | MAE prueba | Brecha (prueba − entrenamiento) | Segundos de entrenamiento |
+| --- | ---: | ---: | ---: | ---: |
+| Línea base mediana | 38,9601 | 36,6301 | −2,3300 | 0,3242 |
+| Lineal sin regularizar | 7,7027 | 7,4572 | −0,2455 | 0,3067 |
+| Ridge alpha=10 | 7,7014 | 7,3366 | −0,3648 | 0,3004 |
+| Bosque regularizado | 5,5056 | 5,6328 | 0,1272 | 95,6787 |
+
+Los tiempos corresponden a esta ejecución en el contenedor y pueden variar.
 
 **¿Qué regularización aplicaste (o por qué no hizo falta), y qué cambió en la tabla?**
 
-_(tu respuesta)_
+Apliqué Ridge con `alpha=10.0`, que penaliza coeficientes grandes. Incluí una
+regresión sin penalización como referencia: el MAE de prueba pasó de 7,4572
+a 7,3366 y el de entrenamiento de 7,7027 a 7,7014. La mejora en prueba fue
+de 0,1206 emergencias, aproximadamente 1,62%. Aquí el MAE de entrenamiento
+también bajó ligeramente: Ridge optimiza error cuadrático más penalización,
+no MAE, así que no es obligatorio que esta métrica empeore en entrenamiento.
+
+En el bosque limité la profundidad a 12 y exigí al menos 20 observaciones por
+hoja, con 100 árboles y `random_state=42`. Su brecha observada fue pequeña
+(0,1272). No entrené un bosque sin límites en esta comparación, por lo que
+no atribuyo una reducción cuantificada de la brecha a esos límites.
+Los parámetros se fijaron antes de evaluar, sin buscar combinaciones con prueba.
 
 **¿Cuánto mejora tu mejor modelo a la línea base?**
 
-_(tu respuesta)_
+El mejor fue el bosque regularizado: redujo el MAE de prueba de 36,6301
+a 5,6328 emergencias por cantón y día. La reducción absoluta fue de 30,9973
+emergencias y la relativa de 84,62%:
+`(36,6301 − 5,6328) / 36,6301 × 100`. Esta mejora corresponde al pronóstico
+del volumen a tres días; no mide la detección de demanda alta, que sería
+otro objetivo y requeriría construir sus umbrales solo con entrenamiento.
 
 ## Antes de la próxima sesión
 

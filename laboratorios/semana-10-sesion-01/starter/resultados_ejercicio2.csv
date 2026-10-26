@@ -1,0 +1,5 @@
+modelo,mae_entrenamiento,mae_prueba,brecha,segundos
+linea base,13.1998,12.5308,-0.669,0.005
+lineal grado 3,0.9756,2472658347.7193,2472658346.7437,4.599
+ridge grado 3,1.0272,1.3209,0.2938,0.383
+gradient boosting,1.0705,1.2754,0.2048,0.144

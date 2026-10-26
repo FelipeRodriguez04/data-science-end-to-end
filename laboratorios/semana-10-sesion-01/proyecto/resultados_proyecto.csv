@@ -1,0 +1,5 @@
+modelo,mae_entrenamiento,mae_prueba,brecha,segundos
+linea base mediana,38.960139,36.630104,-2.330035,0.324151
+lineal sin regularizar,7.702734,7.457197,-0.245537,0.306739
+ridge alpha=10,7.701378,7.336582,-0.364796,0.300400
+bosque regularizado,5.505628,5.632802,0.127174,95.678730
