@@ -13,6 +13,7 @@ todas digan OK, pasa a las preguntas del README.
 """
 
 import os
+import math
 import time
 
 import pandas as pd
@@ -98,15 +99,19 @@ def escribir_prompt():
 
 
 # TODO 1: la red neuronal del Ejercicio 1, con el nombre "red neuronal".
-red = None
+red = evaluar("red neuronal", MLPRegressor(
+    hidden_layer_sizes=(64,), max_iter=1000, random_state=42
+))
 
 # TODO 2: el ensamblaje del Ejercicio 1, con el nombre "gradient boosting".
-ensamblaje = None
+ensamblaje = evaluar("gradient boosting", GradientBoostingRegressor(random_state=42))
 
 # TODO 3: mae_red_muestra y mae_ensamblaje_muestra, el error absoluto
 # medio de cada modelo sobre los 20 viajes de muestra.
-mae_red_muestra = None
-mae_ensamblaje_muestra = None
+mae_red_muestra = mean_absolute_error(y_muestra, red.predict(muestra))
+mae_ensamblaje_muestra = mean_absolute_error(y_muestra, ensamblaje.predict(muestra))
+print(f"MAE red neuronal en los 20 viajes: {mae_red_muestra:.4f}")
+print(f"MAE gradient boosting en los 20 viajes: {mae_ensamblaje_muestra:.4f}")
 
 prompt = escribir_prompt()
 print()
@@ -116,14 +121,39 @@ print("prompt_llm.txt escrito:", len(prompt), "caracteres")
 # y mae_llm, su error absoluto medio sobre los mismos 20 viajes.
 predicciones_llm = None
 mae_llm = None
+if os.path.exists("respuestas_llm.txt"):
+    with open("respuestas_llm.txt", encoding="utf-8") as archivo:
+        predicciones_llm = [float(linea.strip()) for linea in archivo if linea.strip()]
+    if len(predicciones_llm) != 20 or not all(math.isfinite(p) for p in predicciones_llm):
+        raise ValueError("respuestas_llm.txt debe contener exactamente 20 numeros finitos.")
+    mae_llm = mean_absolute_error(y_muestra, predicciones_llm)
+    print(f"MAE LLM en los 20 viajes: {mae_llm:.4f}")
+else:
+    print("Pendiente: responder prompt_llm.txt con un LLM y guardar los 20 numeros en respuestas_llm.txt.")
 
 # Paso 5: el costo de estimar 10 000 viajes al mes con el LLM, en
 # dolares, en costo_10000. Busca en la pagina de precios del proveedor
 # que usaste el precio por millon de tokens de entrada y anotalo abajo.
 # Cuenta un token cada 4 caracteres, y un prompt como este por cada 20
 # viajes; ignora los tokens de salida.
-PRECIO_POR_MILLON_DE_TOKENS = None
+# Modelo usado: GPT-6.1 Sol, esfuerzo de razonamiento medium.
+# Precio API estandar de entrada sin cache, consultado el 2026-10-28:
+# https://developers.openai.com/api/docs/models/gpt-6.1-sol
+# Es una estimacion API para el ejercicio, no el costo de la suscripcion.
+PRECIO_POR_MILLON_DE_TOKENS = 2.00
 costo_10000 = None
+if PRECIO_POR_MILLON_DE_TOKENS is not None:
+    if not math.isfinite(PRECIO_POR_MILLON_DE_TOKENS) or PRECIO_POR_MILLON_DE_TOKENS <= 0:
+        raise ValueError("El precio por millon de tokens debe ser positivo y finito.")
+    tokens_por_prompt = len(prompt) / 4
+    prompts_por_mes = 10000 / len(muestra)
+    costo_10000 = (
+        tokens_por_prompt * prompts_por_mes
+        * PRECIO_POR_MILLON_DE_TOKENS / 1_000_000
+    )
+    print(f"Costo estimado de entrada para 10 000 viajes: ${costo_10000:.6f}")
+else:
+    print("Pendiente: configurar LLM_PRECIO_ENTRADA_POR_MILLON con el precio oficial del modelo usado.")
 
 
 def comprobar(numero, condicion):

@@ -1,0 +1,4 @@
+modelo,mae_entrenamiento,mae_prueba,mae_10_filas,segundos_entrenamiento,parametros_red,costo_entrada_10000_usd
+bosque regularizado,5.505628,5.632802,6.097502,95.113100,,
+red neuronal,6.096481,5.947196,7.824228,11.797143,15105.000000,
+LLM GPT-6.1 Sol medium,,,5.100000,,,2.099000
