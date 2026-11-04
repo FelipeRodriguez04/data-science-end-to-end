@@ -1,0 +1,5 @@
+validacion,mae_promedio,desviacion,pliegues
+"aleatorio, gradient boosting",1.2288,0.0361,"[1.28, 1.24, 1.16, 1.24, 1.23]"
+"aleatorio, bosque",1.288,0.0291,"[1.3, 1.27, 1.25, 1.34, 1.28]"
+"temporal, gradient boosting",1.3099,0.0693,"[1.4, 1.21, 1.38, 1.27, 1.29]"
+"por zona, gradient boosting",2.2996,2.0648,"[1.27, 1.31, 1.29, 1.19, 6.43]"
