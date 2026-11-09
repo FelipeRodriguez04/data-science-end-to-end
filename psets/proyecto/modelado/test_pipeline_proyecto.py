@@ -31,7 +31,7 @@ def test_features_con_valores_conocidos_sin_modificar_original():
     datos = ejemplo()
     original = datos.copy(deep=True)
     salida = agregar_features(datos)
-    assert salida.loc[0, "demanda_relativa_7d_28d"] == 999.0  # Fallo deliberado para demostrar CI; se corrige después.
+    assert salida.loc[0, "demanda_relativa_7d_28d"] == 2.0
     # Jueves 1 + 3 días = domingo 4; viernes 2 + 3 = lunes 5.
     assert salida.loc[0, "es_fin_de_semana_t3"] == 1
     assert salida.loc[1, "es_fin_de_semana_t3"] == 0
