@@ -88,23 +88,32 @@ Solo o en pareja. Carpeta: [`starter/ejercicio2/`](./starter/ejercicio2/). Cada 
 
 **Respuesta 1:** ¿cuántos pagos quedaron en la cola de revisión? ¿Cuántos fraudes esperarías encontrar en los 300 pagos, si la proporción es la de la Semana 11?
 
-_(tu respuesta)_
+Quedaron **26 de 300 pagos** en la cola al aplicar `probabilidad_fraude >= 0.10`, ordenados de mayor a menor probabilidad. Se puntuaron los 300 sin perder ni reordenar identificadores en la tabla completa; la versión del modelo de esta ejecución fue `f3038612d4f2`. Con la proporción observada en Semana 11 (295/6000 = 4,9167%), se esperarían **14,75 fraudes**, aproximadamente 15. Los 26 casos marcados no son 26 fraudes confirmados: también habrá falsas alarmas y podrían quedar fraudes fuera de la cola.
 
 **Respuesta 2:** este modelo corre por lotes, una vez al día. ¿Qué pierde la empresa por no evaluar cada pago en el momento en que ocurre? ¿Qué tendría que pasar con la revisión para que eso importe?
 
-_(tu respuesta)_
+Pierde la posibilidad de intervenir antes de autorizar o liquidar cada pago; un fraude puede llevar casi 24 horas esperando el siguiente lote, más el tiempo de revisión. Eso importa si una revisión a tiempo puede bloquear, retener o recuperar el pago y el equipo tiene capacidad para actuar antes del plazo operativo. Si solo se auditan pagos ya cerrados sin una acción preventiva posible, puntuar en milisegundos no genera por sí solo esa ventaja. El lote sirve para priorizar revisión, no reemplaza un bloqueo online.
 
 **Respuesta 3:** la prueba de la cola de revisión arma su propia tabla de cuatro pagos con probabilidades escritas a mano, en vez de usar el modelo. ¿Qué gana la prueba con eso?
 
-_(tu respuesta)_
+La tabla manual permite saber exactamente el resultado esperado sin entrenar ni depender de probabilidades que cambien con el modelo. Comprueba el contrato del filtrado: entra el límite 0,10, sale 0,05 y el orden debe ser 0,90; 0,40; 0,10 (pagos 4, 2, 3). Así detecta cambiar `>=` por `>` o invertir el orden, y distingue errores de la cola de cambios en el clasificador.
 
 **Si terminas antes:** sube `UMBRAL` a 0.50 y vuelve a correr `puntuar_pagos.py`. ¿Cuántos pagos quedan en la cola? ¿Siguen pasando todas las pruebas? ¿Por qué?
 
-_(tu respuesta)_
+Con umbral **0,50** quedan **13 pagos**, frente a 26 con 0,10. Las cuatro pruebas siguen pasando: la función recibe el umbral como argumento y la prueba de la cola usa explícitamente 0,10 sobre cuatro probabilidades conocidas, no la constante global del lote. Por eso verifican la lógica sin obligar a una política de umbral concreta. Se realizó la comparación sobre los mismos pagos puntuados y se conserva `UMBRAL=0.10` en el script final y sus archivos de salida. `comprobar.py` muestra los cinco pasos `OK` y pytest indica `4 passed`.
+
+
+Archivos generados: [pagos_puntuados.csv](./starter/ejercicio2/pagos_puntuados.csv) y [cola_revision.csv](./starter/ejercicio2/cola_revision.csv). El archivo del modelo `.joblib` queda local y se regenera con `python entrenar_fraude.py`.
 
 ## Ejercicio 3: el despliegue y las pruebas de tu proyecto
 
 Usa tu proyecto en [`psets/proyecto/`](../../psets/README.md). Esta vez no hay plantilla.
+
+Entregables completados:
+
+- [docs/despliegue.md](../../psets/proyecto/docs/despliegue.md): patrón, usuarios, latencia, datos y operación propuesta.
+- [modelado/pipeline_proyecto.py](../../psets/proyecto/modelado/pipeline_proyecto.py): punto de entrada que reutiliza la implementación de Semana 9 sin duplicarla.
+- [modelado/test_pipeline_proyecto.py](../../psets/proyecto/modelado/test_pipeline_proyecto.py): cinco pruebas con datos sintéticos. Cubren exclusión del objetivo, features calculadas a mano sin modificar la entrada, denominador cero, categorías desconocidas/faltantes y separación temporal de etiquetas. No leen datos reales ni requieren MLflow.
 
 ### Entregable 1: `docs/despliegue.md`
 
@@ -131,15 +140,17 @@ El archivo [`.github/workflows/pruebas.yml`](../../.github/workflows/pruebas.yml
 
 **Pega el enlace a la ejecución de GitHub Actions donde pasan tus pruebas:**
 
-_(tu respuesta)_
+[Ejecución de las pruebas corregidas en GitHub Actions](https://github.com/FelipeRodriguez04/data-science-end-to-end/actions/runs/42667625082). El comando del workflow es `pytest psets/proyecto -v`, con cinco pruebas del pipeline y datos sintéticos.
 
 **¿Qué patrón elegiste para tu proyecto, y qué número de latencia lo decide?**
 
-_(tu respuesta)_
+Elegí **batch diario**, con meta de publicación de **60 minutos** después del cierre y disponibilidad de datos de t. Es un requisito propuesto para planificación de recursos por cantón a t+3, que debe confirmarse con los usuarios; no es una latencia ya medida ni un sistema de despacho inmediato. Los 224 cantones son conocidos de antemano: 224 predicciones diarias para el horizonte actual. El documento diferencia la regresión exploratoria actual de las alertas de demanda alta a t+3/t+7 aún pendientes.
 
 **Rompe a propósito una de tus pruebas (cambia un valor esperado), haz push y mira qué pasa en GitHub. Después arréglala. ¿Qué te dijo GitHub, y dónde lo viste?**
 
-_(tu respuesta)_
+Cambié deliberadamente el valor esperado de `demanda_relativa_7d_28d` de 2,0 a 999,0 en la rama `semana12-sesion01-ejercicios-2-3`. GitHub mostró el job `pytest` en rojo: **1 failed, 4 passed**, `AssertionError: assert 2.0 == 999.0`, y salida con código 1 en el paso “Correr las pruebas de psets/proyecto”. Se puede ver en [la ejecución fallida](https://github.com/FelipeRodriguez04/data-science-end-to-end/actions/runs/42667310657).
+
+Después restauré el esperado correcto, 2,0, y subí la corrección. La [ejecución corregida](https://github.com/FelipeRodriguez04/data-science-end-to-end/actions/runs/42667625082) comprueba las cinco pruebas. La demostración se hizo en una rama de trabajo para conservar `master` estable; las pruebas no necesitan el CSV privado ni archivos del registro de modelos.
 
 ## Antes de la próxima sesión
 
