@@ -46,3 +46,6 @@ mlartifacts/
 
 # Material reemplazado (no se sube)
 _to_delete/
+
+# Metadatos locales que se regeneran junto al modelo exportado.
+psets/proyecto/servicio/modelo_metadata.json

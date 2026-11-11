@@ -22,4 +22,4 @@ Con batch se pierde capacidad de actualizar una predicción al llegar un evento 
 
 ## Pruebas y ejecución
 
-Desde la raíz: `pytest psets/proyecto -v`. Las pruebas fabrican sus DataFrames y un CSV temporal propio; no dependen de los datos reales ni de MLflow. `modelado/pipeline_proyecto.py` reutiliza el pipeline de los laboratorios para que las pruebas protejan la misma implementación ya evaluada.
+Desde la raíz: `pytest psets/proyecto -v`. Las pruebas fabrican sus DataFrames y un CSV temporal propio; no dependen de los datos reales ni de MLflow. `modelado/pipeline_proyecto.py` contiene la implementación canónica ya evaluada; el archivo de Semana 9 importa esas mismas funciones para mantener compatibles los laboratorios. La API también las importa desde `modelado`.

@@ -48,27 +48,56 @@ curl -X POST localhost:8000/predecir -H "Content-Type: application/json" -d '{"f
 
 **Respuesta 1 (antes de los TODO):** sin resolver, `/salud` dice que el modelo está cargado, `/predecir` responde 200 y `pytest` dice `3 passed`. ¿Qué de esa salida debería preocuparte?
 
-_(tu respuesta)_
+Que un HTTP 200 solo confirma que la petición se atendió, no que se hizo una predicción correcta. La plantilla devuelve una tarifa constante de 0,0 sin consultar al modelo; `/salud` únicamente comprueba que el modelo esté cargado. Además, dos pruebas no tenían `assert`, así que podían pasar sin verificar ni la tarifa ni el rechazo de entradas inválidas. Las pruebas completadas ahora exigen tarifa 20,0 con el modelo de prueba y HTTP 422 cuando falta la zona de origen.
 
 **Respuesta 2 (TODO 1):** con el esquema completo, ¿qué esperas que responda el servicio a un viaje sin `distancia_km`? ¿Y a uno sin `zona_origen`?
 
-_(tu respuesta)_
+Sin `distancia_km`, el esquema usa `None` porque ese campo es opcional; la preparación del pipeline imputa el faltante y permite predecir. La petición real sin distancia respondió HTTP 200 con `{"tarifa_estimada":68.56}`. Sin `zona_origen`, que es obligatoria, FastAPI responde HTTP 422 antes de llamar al modelo.
 
 **Respuesta 3 (TODO 2):** el modelo se entrenó con `hora_sin`, `hora_cos` y `es_hora_pico`, pero la app manda solo la fecha y hora. ¿Qué pasaría si el servicio calculara `es_hora_pico` con otras horas que las del entrenamiento?
 
-_(tu respuesta)_
+Se produciría una inconsistencia entre entrenamiento y servicio: la misma hora representaría condiciones distintas. El modelo seguiría aceptando la columna y podría responder HTTP 200, pero con una tarifa afectada por una feature distinta de la aprendida. Por eso el servicio usa `agregar_features` de `features_taxis.py`, con las mismas reglas de las features de entrenamiento. Primero se enriquece el DataFrame original, incluida `fecha_hora_inicio`; después se seleccionan las columnas del modelo. Seleccionar `YA_LISTAS` antes de calcularlas produce el `KeyError` que encontramos.
 
 **Respuesta 4 (TODO 3 y 4):** el código 422 del viaje sin zona de origen, ¿lo produce tu código o FastAPI? ¿La petición llega al modelo?
 
-_(tu respuesta)_
+Lo produce FastAPI mediante la validación de Pydantic del esquema `Viaje`, porque `zona_origen: str` es obligatoria. El cuerpo no cumple el esquema, de modo que no se ejecuta `predecir` ni se llama al modelo. La prueba comprueba `respuesta.status_code == 422`.
 
 **Respuesta 5 (TODO 5):** construye y corre la imagen con el `CMD` sin resolver (`docker build -t servicio-tarifa .` y `docker run -p 8000:8000 servicio-tarifa`). El log dice que uvicorn está corriendo, pero `curl localhost:8000/salud` falla. ¿Por qué?
 
-_(tu respuesta)_
+El `CMD` original no especifica `--host`, así que uvicorn escucha por defecto en `127.0.0.1` dentro del contenedor. Publicar `-p 8000:8000` no hace accesible un servidor que solo escucha en su interfaz interna de loopback. `EXPOSE 8000` tampoco cambia esa dirección. La corrección es `CMD ["uvicorn", "servicio:app", "--host", "0.0.0.0", "--port", "8000"]`: escucha en todas las interfaces del contenedor y permite acceder por el puerto publicado. Tras modificarlo hay que reconstruir la imagen y recrear el contenedor.
 
 **Lo que respondió el servicio:**
 
-_(anota la tarifa del viaje de Midtown al aeropuerto, y la respuesta completa al viaje sin zona de origen)_
+Se comprobó el servicio de Docker mediante peticiones HTTP al puerto **8000**.
+
+El viaje de Midtown a JFK Airport del ejemplo recibió HTTP **200**:
+
+```json
+{"tarifa_estimada":70.39}
+```
+
+La misma petición sin `zona_origen` recibió HTTP **422**, con el cuerpo completo:
+
+```json
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "zona_origen"],
+      "msg": "Field required",
+      "input": {
+        "fecha_hora_inicio": "2026-11-05 08:30",
+        "zona_destino": "JFK Airport",
+        "distancia_km": 26.4,
+        "pasajeros": 2,
+        "metodo_pago": "tarjeta"
+      }
+    }
+  ]
+}
+```
+
+Las tres pruebas de `test_servicio.py` pasan; la tarifa 20,0 de esas pruebas proviene del modelo sintético, mientras que 70,39 es la predicción del modelo entrenado servido en Docker.
 
 ## Durante el ConcepTest
 
@@ -90,23 +119,45 @@ Solo o en pareja. Carpeta: [`starter/ejercicio2/`](./starter/ejercicio2/). La se
 
 **Respuesta 1:** levanta el servicio y evalúa dos pagos: uno de madrugada, por app, con tarjeta nueva, dos intentos fallidos y ningún viaje previo; otro de la tarde, con tarjeta conocida y 22 viajes previos. ¿Qué probabilidad y qué decisión recibió cada uno?
 
-_(tu respuesta)_
+Se entrenó el gradient boosting con los 6.000 pagos y se probó la imagen `servicio-fraude` mediante HTTP. Se publicaron sus rutas en el puerto **8001**, porque el 8000 estaba ocupado por el servicio de tarifas. Los pagos del archivo `comprobar.py` dieron:
+
+| Pago | Datos | Probabilidad de fraude | Revisar |
+|---|---|---:|---|
+| Riesgoso | 2026-11-04 02:40, app, monto 41,30, distancia 8,6 km, tarjeta nueva, 2 intentos fallidos, 0 viajes previos | 0,9996 | `true` |
+| Tranquilo | 2026-11-04 14:10, tarjeta, monto 19,80, distancia 6,3 km, tarjeta conocida, 0 intentos fallidos, 22 viajes previos | 0,0159 | `false` |
+
+Ambas peticiones respondieron HTTP 200; `/salud` devolvió `{"estado":"ok","modelo_cargado":true}`. `python comprobar.py` mostró los cinco pasos `OK`; `python -m pytest test_servicio_fraude.py -v` mostró **3 passed**. Para consultar la API, abre el puerto 8001 y agrega `/docs`.
 
 **Respuesta 2:** el servicio devuelve la decisión (`revisar`) además de la probabilidad. ¿Qué gana la app con eso? ¿Qué tendría que cambiar si la empresa decide mañana que el umbral es 0.20?
 
-_(tu respuesta)_
+La app recibe una decisión consistente y no necesita duplicar el umbral ni las reglas del servicio. Si la política cambia a 0,20, se cambia `UMBRAL` en `servicio_fraude.py` y se reinicia el servicio; al estar el código copiado dentro de la imagen, para Docker se reconstruye y se recrea el contenedor. No hace falta reentrenar el clasificador por cambiar ese umbral. La decisión usa la probabilidad completa (`probabilidad >= UMBRAL`), mientras que la probabilidad expuesta se redondea a cuatro decimales.
 
 **Respuesta 3:** el mismo pago, evaluado por este servicio y por el lote de la sesión pasada, ¿da la misma probabilidad? ¿Qué tiene que ser igual en los dos para que así sea?
 
-_(tu respuesta)_
+Sí: al pasar los dos pagos por `puntuar_lote` de la sesión anterior usando el mismo modelo exportado, devolvieron **0,9996** y **0,0159**, iguales a la API. Deben coincidir el pipeline ajustado, las features (hora y monto por km), tipos, unidades y datos de entrada, además de versiones compatibles de las dependencias. No basta usar el mismo nombre de algoritmo. Para comparar probabilidades redondeadas debe usarse el mismo redondeo. Cerca del umbral, el lote decide sobre su probabilidad ya redondeada y la API sobre la original: esa diferencia podría cambiar una decisión en un caso límite.
 
 **Si terminas antes:** manda a `/evaluar_pago` un pago con `"monto": "cuarenta"`. ¿Qué responde el servicio, y qué línea de `servicio_fraude.py` produce esa respuesta?
 
-_(tu respuesta)_
+La petición con `"monto": "cuarenta"` respondió **HTTP 422**:
+
+```json
+{"detail":[{"type":"float_parsing","loc":["body","monto"],"msg":"Input should be a valid number, unable to parse string as a number","input":"cuarenta"}]}
+```
+
+Lo provoca la declaración `monto: float` del esquema `Pago`: FastAPI/Pydantic valida la entrada antes de ejecutar `evaluar_pago`, de modo que esa petición no llega al modelo.
 
 ## Ejercicio 3: el servicio de tu proyecto
 
-Usa tu proyecto en [`psets/proyecto/`](../../psets/README.md) y el modelo final que registraste en MLflow (Semana 11). Esta vez no hay plantilla. Aunque tu proyecto se despliegue por lotes, el servicio también se construye: es la forma en que otro sistema (tu propio lote, un tablero, otra aplicación) le pide una predicción a tu modelo.
+Usa tu proyecto en [`psets/proyecto/`](../../psets/README.md) y el modelo final que registraste en MLflow (Semana 11).
+
+Entregables completados en `psets/proyecto/`:
+
+- [servicio/exportar_modelo.py](../../psets/proyecto/servicio/exportar_modelo.py): exporta el bosque de la corrida `0c40681fa7d54d56a75a95cd8ee29f5e` desde MLflow con scikit-learn 1.5.2.
+- [servicio/api.py](../../psets/proyecto/servicio/api.py), [servicio/Dockerfile](../../psets/proyecto/servicio/Dockerfile) y [servicio/requirements.txt](../../psets/proyecto/servicio/requirements.txt).
+- [servicio/test_api.py](../../psets/proyecto/servicio/test_api.py): salud, predicción conocida, validación de entradas, features compartidas y ausencia de modelo. Las 13 pruebas del proyecto pasan sin datos reales ni artefactos de MLflow.
+- [README del proyecto](../../psets/proyecto/README.md#cómo-correr-el-servicio): exportación, construcción, ejecución, contrato y ejemplo completo.
+
+El servicio quedó probado en Docker en el puerto **8002**. Predice volumen exploratorio de emergencias a t+3; no implementa todavía las alertas de demanda alta a t+3/t+7. Esta vez no hay plantilla. Aunque tu proyecto se despliegue por lotes, el servicio también se construye: es la forma en que otro sistema (tu propio lote, un tablero, otra aplicación) le pide una predicción a tu modelo.
 
 ### Entregable 1: el servicio, en `psets/proyecto/servicio/`
 
@@ -126,11 +177,52 @@ En `proyecto/README.md`, agrega la sección **Cómo correr el servicio**: cómo 
 
 **¿Qué datos recibe tu servicio, y cuáles de tus features calcula él mismo? ¿Cómo sabes que las calcula igual que en el entrenamiento?**
 
-_(tu respuesta)_
+Recibe la fecha de corte t, `cod_canton` como texto de cuatro dígitos (preserva ceros iniciales), el conteo de emergencias de t, lags de 1/7/14/28 días, medias históricas de 7/28 días y el indicador de feriado de t+3. El llamador debe obtener los históricos del procesamiento disponible al cierre de t y el feriado de un calendario; el servicio no consulta eventos crudos ni deduce ese feriado.
+
+La API calcula `demanda_relativa_7d_28d` y `es_fin_de_semana_t3` mediante `agregar_features`, importada de `modelado.pipeline_proyecto`. Se movió allí la implementación canónica y se conservó un archivo de compatibilidad en Semana 9 que importa las mismas funciones: no hay dos versiones copiadas. El pipeline exportado de MLflow conserva imputación, escalado, one-hot y el bosque ya ajustados. Una prueba verifica las features conocidas antes de llegar a `predict`; otra comprobación HTTP confirmó que la predicción de Docker coincide con la del modelo exportado para la misma entrada. No se llama a `fit` en el servicio.
 
 **Pega una petición a tu servicio corriendo en el contenedor, y su respuesta:**
 
-_(tu respuesta)_
+Desde `psets/proyecto/`, se mandó esta petición al contenedor, publicado como `8002:8000`:
+
+```bash
+curl -sS -X POST http://localhost:8002/predecir \
+  -H 'Content-Type: application/json' \
+  --data-binary @servicio/ejemplo.json
+```
+
+Contenido del archivo de ejemplo (datos sintéticos, no observaciones operativas):
+
+```json
+{
+  "fecha": "2026-11-05",
+  "cod_canton": "0101",
+  "n_emergencias": 12,
+  "lag_1d": 10,
+  "lag_7d": 11,
+  "lag_14d": 9,
+  "lag_28d": 8,
+  "media_prev_7d": 10,
+  "media_prev_28d": 5,
+  "es_feriado_t3": 0
+}
+```
+
+Respuesta HTTP **200**:
+
+```json
+{
+  "cod_canton": "0101",
+  "fecha_corte": "2026-11-05",
+  "fecha_objetivo": "2026-11-08",
+  "horizonte_dias": 3,
+  "emergencias_estimadas": 7.0791,
+  "version_modelo": "ea7725843adaa53303713e36a94d12ec612183bef7be61674f54056cb18c55bb",
+  "run_id": "0c40681fa7d54d56a75a95cd8ee29f5e"
+}
+```
+
+El valor 7,0791 es una estimación continua de emergencias por cantón y día. El esquema devuelve HTTP 422 con un conteo negativo; sin archivo del modelo la predicción responde 503. `/salud` confirmó modelo cargado e identificadores. Los archivos exportados y `.mlflow/` son locales e ignorados por Git; otro clon necesita recuperar el registro o regenerarlo y ejecutar el exportador.
 
 ## Antes de la próxima sesión
 

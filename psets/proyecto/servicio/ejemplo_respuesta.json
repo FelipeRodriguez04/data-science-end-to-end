@@ -1,0 +1,9 @@
+{
+  "cod_canton": "0101",
+  "fecha_corte": "2026-11-05",
+  "fecha_objetivo": "2026-11-08",
+  "horizonte_dias": 3,
+  "emergencias_estimadas": 7.0791,
+  "version_modelo": "ea7725843adaa53303713e36a94d12ec612183bef7be61674f54056cb18c55bb",
+  "run_id": "0c40681fa7d54d56a75a95cd8ee29f5e"
+}

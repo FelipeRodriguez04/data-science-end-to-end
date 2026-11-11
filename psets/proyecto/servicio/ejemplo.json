@@ -1,0 +1,12 @@
+{
+  "fecha": "2026-11-05",
+  "cod_canton": "0101",
+  "n_emergencias": 12,
+  "lag_1d": 10,
+  "lag_7d": 11,
+  "lag_14d": 9,
+  "lag_28d": 8,
+  "media_prev_7d": 10,
+  "media_prev_28d": 5,
+  "es_feriado_t3": 0
+}
