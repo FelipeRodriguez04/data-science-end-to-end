@@ -28,7 +28,7 @@ Los datos no están en el repositorio. Para regenerarlos desde cero: [los comand
 
 ## Cómo correr el servicio
 
-El servicio usa el bosque regularizado de la corrida MLflow `0c40681fa7d54d56a75a95cd8ee29f5e`, con scikit-learn **1.5.2**. Su MAE en el período de prueba original es **5,632802** y en validación temporal de tres pliegues promedia **6,181659**. Son evaluaciones diferentes. La API predice volumen a t+3, no probabilidad de demanda alta.
+El servicio exporta la versión con alias `produccion` del registro **`ecu911-volumen-emergencias-t3`**, con scikit-learn **1.5.2**. Actualmente es la **versión 1**, corrida `564e0872f87e4c48801b363c9014425c` (bosque de 100 árboles). La versión 2, con 50 árboles, fue rechazada por MAE mayor: 5,639604 frente a 5,632802. El procedimiento y el rollback se describen en [Versionado y registro](docs/despliegue.md#versionado-y-registro). Su MAE en el período de prueba original es **5,632802** y en validación temporal de tres pliegues promedia **6,181659**. Son evaluaciones diferentes. La API predice volumen a t+3, no probabilidad de demanda alta.
 
 ### 1. Exportar desde MLflow
 
@@ -38,12 +38,12 @@ Desde la raíz del repositorio, con las dependencias de `requirements.txt` insta
 bash .devcontainer/mlflow-server.sh
 cd psets/proyecto
 export MLFLOW_TRACKING_URI=http://127.0.0.1:5050
-python servicio/exportar_modelo.py
+python -m servicio.exportar_modelo
 ```
 
-Esto carga `runs:/0c40681fa7d54d56a75a95cd8ee29f5e/modelo` y escribe `servicio/modelo.joblib` y `servicio/modelo_metadata.json`. Ambos son locales, están ignorados por Git y se regeneran juntos. El script verifica que la versión de scikit-learn coincida con la registrada y guarda el run ID y la huella SHA-256 del archivo exportado. Al arrancar, la API comprueba esa huella.
+Esto resuelve `models:/ecu911-volumen-emergencias-t3@produccion`, carga la versión numérica resuelta y escribe `servicio/modelo.joblib`, `servicio/modelo_version.txt` y `servicio/modelo_metadata.json`. Los tres son locales, están ignorados por Git y se regeneran juntos. El script verifica que la versión de scikit-learn coincida con la registrada y guarda el número de versión, el run ID y la huella SHA-256 del archivo exportado. Al arrancar, la API comprueba esa huella y su correspondencia con `modelo_version.txt`.
 
-El registro `.mlflow/` tampoco se sube a Git. Si clonas en otra máquina, necesitas recuperar sus artefactos o ejecutar el notebook de Semana 11 y exportar la nueva corrida: `python servicio/exportar_modelo.py --run-id ID`. Los identificadores y la huella de esa exportación serán los de tu modelo, no necesariamente los del ejemplo.
+El registro `.mlflow/` tampoco se sube a Git. Si clonas en otra máquina, necesitas recuperar sus artefactos o registrar de nuevo (`python -m servicio.registrar_modelo --arboles 100`), promover la versión creada (`python -m servicio.promover VERSION --responsable TU_NOMBRE --motivo "Referencia inicial"`) y ejecutar `python -m servicio.exportar_modelo`. Los identificadores y la huella de esa exportación serán los de tu modelo, no necesariamente los del ejemplo.
 
 ### 2. Construir y levantar
 
@@ -51,7 +51,7 @@ Desde `psets/proyecto/`:
 
 ```bash
 docker build -f servicio/Dockerfile -t servicio-ecu911 .
-docker run -d --name servicio-ecu911 -p 8002:8000 servicio-ecu911
+docker run -d --name servicio-ecu911-registro -p 8002:8000 servicio-ecu911
 ```
 
 El contexto debe ser `psets/proyecto/`, porque la imagen copia tanto `modelado/pipeline_proyecto.py` como `servicio/`. El puerto **8002** evita ocupar los puertos 8000 y 8001 usados por los ejercicios de taxis. Abre `/docs` en ese puerto para la documentación interactiva.
@@ -99,12 +99,13 @@ Respuesta HTTP **200** obtenida con el bosque exportado en el contenedor (entrad
   "fecha_objetivo": "2026-11-08",
   "horizonte_dias": 3,
   "emergencias_estimadas": 7.0791,
-  "version_modelo": "ea7725843adaa53303713e36a94d12ec612183bef7be61674f54056cb18c55bb",
-  "run_id": "0c40681fa7d54d56a75a95cd8ee29f5e"
+  "version_modelo": "1",
+  "run_id": "564e0872f87e4c48801b363c9014425c",
+  "huella_modelo": "ea7725843adaa53303713e36a94d12ec612183bef7be61674f54056cb18c55bb"
 }
 ```
 
-`GET /salud` informa si hay modelo cargado y su identidad. La predicción devuelve HTTP 503 si falta el modelo; las entradas inválidas (fecha incorrecta, cantón mal formado, conteos negativos o campos obligatorios ausentes) reciben HTTP 422 antes de llegar al modelo. La salida identifica el corte, objetivo, horizonte, corrida MLflow y versión SHA-256 para trazabilidad. Es una estimación continua de volumen, no un conteo observado ni una garantía de capacidad operativa.
+`GET /salud` informa si hay modelo cargado y su identidad. La predicción devuelve HTTP 503 si falta el modelo; las entradas inválidas (fecha incorrecta, cantón mal formado, conteos negativos o campos obligatorios ausentes) reciben HTTP 422 antes de llegar al modelo. La salida identifica el corte, objetivo, horizonte, corrida MLflow y versión de registro y huella SHA-256 para trazabilidad. Es una estimación continua de volumen, no un conteo observado ni una garantía de capacidad operativa.
 
 ### 4. Pruebas
 

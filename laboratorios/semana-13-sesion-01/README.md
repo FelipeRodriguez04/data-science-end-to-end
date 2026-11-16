@@ -81,23 +81,48 @@ Solo o en pareja. Carpeta: [`starter/ejercicio2/`](./starter/ejercicio2/). El eq
 
 **Respuesta 1:** ¿qué versión quedó en producción, y por qué no la última que se registró?
 
-_(tu respuesta)_
+Quedó **la versión 2 (gradient boosting)**, con recall **0,661017** al umbral 0,10, superior al 0,644068 de la versión 1. La versión 3, aunque se registró después, obtiene solo 0,101695 de recall y no se promueve. La regla compara el recall, no el orden de registro.
+
+| Versión inicial | Candidato | Recall | Precisión | Resultado inicial |
+|---|---|---:|---:|---|
+| 1 | Logística | 0,644068 | 0,304000 | Aprobada: no había producción |
+| 2 | Gradient boosting | 0,661017 | 0,428571 | Aprobada frente a la 1 |
+| 3 | Logística muy regularizada | 0,101695 | 0,666667 | Rechazada frente a la 2 |
+
+La primera versión se registró antes de corregir el manejo del alias ausente de MLflow; se recuperó y promovió esa misma versión sin eliminar ni duplicar el modelo. Después se completaron los otros dos candidatos. La comprobación final mostró los cinco pasos `OK`.
 
 **Respuesta 2:** la regresión logística muy regularizada tiene la mayor precisión de las tres. ¿Por qué la regla la rechazó? ¿Qué tendría que cambiar en la regla si la empresa decide que las falsas alarmas cuestan más que los fraudes no detectados?
 
-_(tu respuesta)_
+La regla solo exige mejorar recall, por eso rechaza la logística muy regularizada aunque su precisión sea 0,666667: con recall 0,101695 deja sin detectar casi el 90% de los fraudes del conjunto evaluado. La precisión alta describe la proporción de alertas que aciertan, no cuántos fraudes se recuperan. Si las falsas alarmas pasan a costar más, habría que comparar el costo `FN × costo_fraude + FP × costo_revision`, y revisar el umbral sobre validación independiente. No bastaría invertir la regla y maximizar precisión, pues podría reducir las alertas a casi ninguna. Estos resultados usan una única partición estratificada 80/20 con semilla 42; no son los promedios de validación cruzada de Semana 11.
 
 **Respuesta 3:** abre el modelo `fraude-pagos` en la interfaz de MLflow (puerto 5050, pestaña **Models**). Si dentro de un mes alguien pregunta por qué la versión 3 nunca llegó a producción, ¿dónde está la respuesta?
 
-_(tu respuesta)_
+En **Models → fraude-pagos → versión 3**, las etiquetas dicen `validacion=rechazada` y `comparada_con=2`. La versión enlaza su corrida de entrenamiento: allí están recall 0,101695 y precisión 0,666667. La corrida de la versión 2 conserva recall 0,661017. Esas etiquetas más las métricas de ambas corridas explican la decisión; el alias `produccion` identifica la versión desplegable actual, no demuestra por sí solo por qué se rechazó una candidata.
 
 **Si terminas antes:** vuelve a correr `python ciclo_fraude.py`. ¿Cuántas versiones hay ahora, y cuál está en producción? ¿Es lo que esperabas?
 
-_(tu respuesta)_
+Después de repetir el ciclo hay **6 versiones** y el alias `produccion` sigue en la **2**. Las nuevas versiones 4, 5 y 6 corresponden a los mismos tres algoritmos y quedan rechazadas frente a la 2. La versión 5 empata su recall (0,661017), pero la condición exige una mejora estricta (`>`). Es lo esperado: cada ejecución registra versiones nuevas sin sobrescribir las anteriores, y registrar no implica promover.
 
 ## Ejercicio 3: el registro de tu proyecto
 
 Usa tu proyecto en [`psets/proyecto/`](../../psets/README.md) y el servicio que construiste la sesión pasada. Esta vez no hay plantilla.
+
+Entregables completados en `psets/proyecto/`:
+
+- [servicio/registrar_modelo.py](../../psets/proyecto/servicio/registrar_modelo.py): reentrena el bosque con el número de árboles elegido, registra métricas y crea una versión nueva.
+- [servicio/promover.py](../../psets/proyecto/servicio/promover.py): compara versiones y mueve `produccion`, guardando responsable y motivo; admite rollback explícito.
+- [servicio/exportar_modelo.py](../../psets/proyecto/servicio/exportar_modelo.py): exporta el alias a archivos locales con versión y huella, incorporados por el [Dockerfile](../../psets/proyecto/servicio/Dockerfile).
+- [servicio/api.py](../../psets/proyecto/servicio/api.py) y [servicio/test_api.py](../../psets/proyecto/servicio/test_api.py): versión numérica en salud y predicción, probada con versión inventada `"7"`. **14 pruebas del proyecto aprobadas**, sin MLflow ni modelos reales para el contrato.
+- [docs/despliegue.md — Versionado y registro](../../psets/proyecto/docs/despliegue.md#versionado-y-registro): criterio, responsables, comandos y rollback.
+
+El registro `ecu911-volumen-emergencias-t3` tiene dos versiones:
+
+| Versión | Árboles | MAE prueba | Producción | Decisión |
+|---|---:|---:|---|---|
+| 1 | 100 | **5,632802** | Sí | Referencia inicial aprobada |
+| 2 | 50 | 5,639604 | No | Rechazada frente a la 1 |
+
+La primera usa la corrida `564e0872f87e4c48801b363c9014425c`; la segunda, `7f62f3997b3846f1993ecb7036abcb05`. Ambas usan los mismos datos y corte. El registro y los archivos exportados son locales e ignorados por Git; otro clon debe recuperar el registro o regenerarlo.
 
 ### Entregable 1: el modelo, en el registro
 
@@ -119,11 +144,30 @@ Agrega la sección **Versionado y registro**: cómo se llama tu modelo en el reg
 
 **¿Con qué criterio decides que una versión nueva de tu modelo pasa a producción? ¿Quién lo decide en tu proyecto, y dónde queda registrada la decisión?**
 
-_(tu respuesta)_
+En esta práctica, el responsable de modelado del proyecto ejecuta la promoción con su identidad y un motivo. El script exige datos y evaluación comparables (misma huella del CSV, corte temporal, separación y filas de prueba) y **MAE estrictamente menor** que el de producción. Si no hay versión previa establece una referencia; un empate o MAE mayor se rechaza. Las etiquetas `validacion`, `comparada_con`, `responsable`, `motivo`, `fecha_decision_utc` y `tipo_decision` quedan en la candidata del registro.
+
+En la ejecución asistida se consignó `FelipeRodriguez04` como responsable de la práctica: la versión 1 fue referencia inicial, y la 2 fue rechazada por MAE 5,639604 frente a 5,632802. Para una operación real debe validar la decisión el usuario responsable de planificación, con evaluación temporal independiente y revisión del costo de subestimar. Esta diferencia pequeña no demuestra significancia estadística, y la repetición de selección sobre el mismo conjunto puede generar optimismo. El rollback queda documentado como excepción explícita con responsable y motivo; no elimina las versiones previas.
 
 **Si tu servicio corre en un contenedor sin acceso al servidor de MLflow, ¿cómo sabe qué versión está sirviendo?**
 
-_(tu respuesta)_
+El exportador consulta el alias `produccion` una vez y descarga la versión numérica resuelta. Guarda `modelo.joblib`, `modelo_version.txt` y `modelo_metadata.json`; la imagen incluye esos tres archivos. La API lee el número al arrancar, valida su correspondencia con los metadatos y la huella SHA-256 del modelo y responde esa versión en `/salud` y `/predecir`. El número ya no es la huella: esta se conserva separadamente como `huella_modelo`.
+
+Se construyó y arrancó `servicio-ecu911-registro` en **8002:8000**, sin MLflow instalado. `/salud` y la predicción del ejemplo respondieron `version_modelo="1"` y `run_id="564e0872f87e4c48801b363c9014425c"`; la predicción fue **7,0791 emergencias**. Cambiar el alias en MLflow no altera esa copia: para desplegar otra versión hay que exportar, reconstruir y recrear el contenedor.
+
+Respuesta real del ejemplo sintético:
+
+```json
+{
+  "cod_canton": "0101",
+  "fecha_corte": "2026-11-05",
+  "fecha_objetivo": "2026-11-08",
+  "horizonte_dias": 3,
+  "emergencias_estimadas": 7.0791,
+  "version_modelo": "1",
+  "run_id": "564e0872f87e4c48801b363c9014425c",
+  "huella_modelo": "ea7725843adaa53303713e36a94d12ec612183bef7be61674f54056cb18c55bb"
+}
+```
 
 ## Antes de la próxima sesión
 

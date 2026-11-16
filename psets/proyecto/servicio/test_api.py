@@ -24,8 +24,9 @@ def cliente(monkeypatch):
     modelo = Pipeline([("preparar", construir_preparacion()), ("modelo", DummyRegressor(strategy="constant", constant=20.0))])
     modelo.fit(datos[NUMERICAS + CATEGORICAS + YA_LISTAS], [20., 20.])
     monkeypatch.setattr(api, "modelo", modelo)
-    monkeypatch.setattr(api, "version_modelo", "modelo-prueba")
+    monkeypatch.setattr(api, "version_modelo", "7")
     monkeypatch.setattr(api, "run_id", "corrida-prueba")
+    monkeypatch.setattr(api, "huella_modelo", "sha-prueba")
     with TestClient(api.app) as cliente:
         yield cliente
 
@@ -33,13 +34,13 @@ def cliente(monkeypatch):
 def test_salud(cliente):
     respuesta = cliente.get("/salud")
     assert respuesta.status_code == 200
-    assert respuesta.json() == {"estado": "ok", "modelo_cargado": True, "version_modelo": "modelo-prueba", "run_id": "corrida-prueba"}
+    assert respuesta.json() == {"estado": "ok", "modelo_cargado": True, "version_modelo": "7", "run_id": "corrida-prueba", "huella_modelo": "sha-prueba"}
 
 
 def test_prediccion_valida(cliente):
     respuesta = cliente.post("/predecir", json=ENTRADA)
     assert respuesta.status_code == 200
-    assert respuesta.json() == {"cod_canton": "0101", "fecha_corte": "2026-11-05", "fecha_objetivo": "2026-11-08", "horizonte_dias": 3, "emergencias_estimadas": 20.0, "version_modelo": "modelo-prueba", "run_id": "corrida-prueba"}
+    assert respuesta.json() == {"cod_canton": "0101", "fecha_corte": "2026-11-05", "fecha_objetivo": "2026-11-08", "horizonte_dias": 3, "emergencias_estimadas": 20.0, "version_modelo": "7", "run_id": "corrida-prueba", "huella_modelo": "sha-prueba"}
 
 
 @pytest.mark.parametrize("cambios", [{"fecha": "incorrecta"}, {"cod_canton": "101"}, {"n_emergencias": -1}, {"es_feriado_t3": 2}])
@@ -65,3 +66,10 @@ def test_sin_modelo_devuelve_503(cliente, monkeypatch):
     monkeypatch.setattr(api, "modelo", None)
     assert cliente.get("/salud").json()["modelo_cargado"] is False
     assert cliente.post("/predecir", json=ENTRADA).status_code == 503
+
+
+def test_prediccion_incluye_version_desplegada(cliente):
+    respuesta = cliente.post("/predecir", json=ENTRADA)
+    assert respuesta.status_code == 200
+    assert respuesta.json()["version_modelo"] == "7"
+    assert cliente.get("/salud").json()["version_modelo"] == "7"

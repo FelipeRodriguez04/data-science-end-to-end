@@ -17,14 +17,15 @@ RUTA_MODELO = Path(os.environ.get("RUTA_MODELO", str(Path(__file__).with_name("m
 modelo = None
 version_modelo = None
 run_id = None
+huella_modelo = None
 if RUTA_MODELO.exists():
-    version_modelo = hashlib.sha256(RUTA_MODELO.read_bytes()).hexdigest()
+    huella_modelo = hashlib.sha256(RUTA_MODELO.read_bytes()).hexdigest()
     metadata_path = RUTA_MODELO.with_name("modelo_metadata.json")
-    if metadata_path.exists():
-        metadata = json.loads(metadata_path.read_text())
-        if metadata["sha256"] != version_modelo:
-            raise ValueError("La huella del modelo no coincide con sus metadatos")
-        run_id = metadata["run_id"]
+    metadata = json.loads(metadata_path.read_text())
+    version_modelo = RUTA_MODELO.with_name("modelo_version.txt").read_text().strip()
+    if metadata["sha256"] != huella_modelo or metadata["version_modelo"] != version_modelo:
+        raise ValueError("El modelo, la versión y los metadatos no coinciden; vuelve a exportar")
+    run_id = metadata["run_id"]
     modelo = joblib.load(RUTA_MODELO)
 
 app = FastAPI(title="ECU911: volumen de emergencias a t+3")
@@ -48,7 +49,7 @@ class CantonDia(BaseModel):
 @app.get("/salud")
 def salud():
     return {"estado": "ok", "modelo_cargado": modelo is not None,
-            "version_modelo": version_modelo, "run_id": run_id}
+            "version_modelo": version_modelo, "run_id": run_id, "huella_modelo": huella_modelo}
 
 
 @app.post("/predecir")
@@ -62,4 +63,4 @@ def predecir(entrada: CantonDia):
     return {"cod_canton": entrada.cod_canton, "fecha_corte": entrada.fecha.isoformat(),
             "fecha_objetivo": (entrada.fecha + timedelta(days=3)).isoformat(),
             "horizonte_dias": 3, "emergencias_estimadas": round(prediccion, 4),
-            "version_modelo": version_modelo, "run_id": run_id}
+            "version_modelo": version_modelo, "run_id": run_id, "huella_modelo": huella_modelo}
