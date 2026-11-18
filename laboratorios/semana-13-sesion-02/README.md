@@ -81,19 +81,19 @@ Solo o en pareja. Carpeta: [`starter/ejercicio2/`](./starter/ejercicio2/). El se
 
 **Respuesta 1:** el reporte da tres tipos de alerta. ¿Cuáles son de sistema y cuáles de modelo? ¿El día de la latencia alta coincide con alguna semana de recall bajo?
 
-_(tu respuesta)_
+La alerta de latencia es de **sistema**. La caída de la tasa de revisión es una **señal indirecta del modelo** y el recall bajo es una alerta de **desempeño del modelo**. El 10 de noviembre el p95 fue **78,2 ms**, por encima del límite de 50 ms. Ese día cae en la semana del 9 de noviembre, cuyo recall fue **73,6 %**. El recall bajo apareció en la semana siguiente, la del 16.
 
 **Respuesta 2:** la tasa de alertas se puede calcular el mismo día; el recall, tres semanas después. ¿Qué semana mostró primero el problema la tasa de alertas, y cuándo lo confirmó el recall? ¿Por qué la tasa de alertas no alcanza para decir que el modelo empeoró?
 
-_(tu respuesta)_
+La primera señal apareció en la semana del **16 de noviembre**. La tasa de revisión bajó a **5,03 %**, por debajo del límite de **5,685 %**. El **13 de diciembre** maduró esa semana y se confirmó un recall de **27,6 %** (21 de 76 fraudes), frente al **73,6 %** de la semana anterior. La proporción enviada a revisión también puede cambiar por la mezcla de pagos, la frecuencia del fraude o la política de umbral. Para saber cuántos fraudes fueron detectados hacen falta los contracargos.
 
 **Respuesta 3:** ¿por qué el reporte no muestra el recall de la semana del 23 de noviembre, si ya hay fraudes confirmados de esa semana?
 
-_(tu respuesta)_
+La semana del 23 terminó el **29 de noviembre**. Puede haber contracargos pendientes hasta el **20 de diciembre**, 21 días después del domingo. Usar solo los fraudes ya confirmados podría sesgar el recall si los pagos que se revisaron y los que pasaron sin alerta se confirman a ritmos distintos. Su tasa de revisión, **4,56 %**, sí se puede calcular al 14 de diciembre.
 
 **Si terminas antes:** cambia `HOY` a `"2026-11-30"` y vuelve a correr. ¿Qué semanas tienen recall? ¿Desde qué día el reporte puede mostrar la caída del recall de la semana del 16?
 
-_(tu respuesta)_
+Al **30 de noviembre** solo aparece la semana del **2 de noviembre**, con recall **76,7 %** (56 de 73 fraudes). La semana del 16 terminó el 22 de noviembre. El reporte mostró su caída desde el **13 de diciembre**, al cumplirse 21 días. Verifiqué el reporte con los cortes del 12 y 13 de diciembre. Los cinco pasos de `comprobar.py` muestran `OK`.
 
 ## Ejercicio 3: el monitoreo de tu proyecto
 
@@ -115,11 +115,13 @@ Una tabla con cada métrica que vigilas: si es de sistema o de modelo, de dónde
 
 **¿Cuánto tarda en llegar la verdad en tu proyecto, y qué métrica te avisa mientras tanto?**
 
-_(tu respuesta)_
+El pronóstico se emite al cierre de t y el conteo se observa al cierre de **t+3**. Para la práctica esperamos que el procesamiento publique ese conteo al día siguiente, alrededor de **t+4**. Mientras tanto vigilamos la **fracción de entradas con lags o medias históricas faltantes**. Una subida avisa que el modelo depende más de la imputación. Una vez disponible la verdad, el reporte une por cantón y fecha objetivo y calcula **MAE y costo asimétrico por semana y versión**. También muestra cuántos pronósticos vencidos siguen sin observación.
 
 **¿Qué falla de tu modelo no vería ninguna de tus métricas de sistema?**
 
-_(tu respuesta)_
+El bosque podría **subestimar repetidamente la demanda** en cantones de alto volumen mientras responde rápido y devuelve HTTP 200. La disponibilidad y la latencia no comparan el pronóstico con el conteo real. Al llegar la observación, el MAE mide el tamaño del error y el costo asimétrico penaliza tres veces más cada emergencia subestimada. Para localizar el patrón, se pueden revisar los errores con signo por cantón.
+
+Las **16 pruebas del proyecto pasan**. En una reproducción histórica con el bosque versión 1 se cruzaron seis predicciones con sus conteos observados de dos semanas. Las métricas, la muestra y las instrucciones quedaron en [docs/monitoreo.md](../../psets/proyecto/docs/monitoreo.md). El reporte está en [monitoreo/desempeno.py](../../psets/proyecto/monitoreo/desempeno.py).
 
 ## Antes de la próxima sesión
 

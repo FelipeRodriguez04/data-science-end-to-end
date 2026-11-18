@@ -2,13 +2,17 @@
 import hashlib
 import json
 import os
-from datetime import date, timedelta
+from collections import deque
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from threading import Lock
+from time import perf_counter
 from typing import Literal
+from uuid import uuid4
 
 import joblib
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from modelado.pipeline_proyecto import agregar_features, NUMERICAS, CATEGORICAS, YA_LISTAS
@@ -29,6 +33,63 @@ if RUTA_MODELO.exists():
     modelo = joblib.load(RUTA_MODELO)
 
 app = FastAPI(title="ECU911: volumen de emergencias a t+3")
+
+
+RUTA_PREDICCIONES = Path(os.environ.get(
+    "RUTA_PREDICCIONES", Path(__file__).resolve().parents[1] / "monitoreo/predicciones.jsonl"
+))
+VENTANA_LATENCIA = 10_000
+app.state.latencias = deque(maxlen=VENTANA_LATENCIA)
+app.state.conteos = {"peticiones": 0, "errores_validacion": 0, "errores_servidor": 0}
+candado_metricas = Lock()
+candado_registro = Lock()
+
+
+@app.middleware("http")
+async def medir_prediccion(request: Request, call_next):
+    if request.method != "POST" or request.url.path != "/predecir":
+        return await call_next(request)
+
+    inicio = perf_counter()
+    estado = 500
+    try:
+        respuesta = await call_next(request)
+        estado = respuesta.status_code
+        return respuesta
+    finally:
+        latencia_ms = (perf_counter() - inicio) * 1_000
+        with candado_metricas:
+            app.state.conteos["peticiones"] += 1
+            app.state.conteos["errores_validacion"] += int(estado == 422)
+            app.state.conteos["errores_servidor"] += int(500 <= estado < 600)
+            app.state.latencias.append(latencia_ms)
+
+
+@app.get("/metricas")
+def metricas():
+    with candado_metricas:
+        conteos = app.state.conteos.copy()
+        latencias = pd.Series(list(app.state.latencias), dtype=float)
+    return {
+        **conteos,
+        "muestras_latencia": len(latencias),
+        "latencia_p50_ms": round(float(latencias.quantile(0.50)), 3) if len(latencias) else None,
+        "latencia_p95_ms": round(float(latencias.quantile(0.95)), 3) if len(latencias) else None,
+    }
+
+
+def registrar_prediccion(entrada, salida):
+    evento = {
+        "id_prediccion": salida["id_prediccion"],
+        "momento_utc": datetime.now(timezone.utc).isoformat(),
+        "version_modelo": salida["version_modelo"],
+        "entrada": entrada.model_dump(mode="json"),
+        "salida": salida,
+    }
+    with candado_registro:
+        RUTA_PREDICCIONES.parent.mkdir(parents=True, exist_ok=True)
+        with RUTA_PREDICCIONES.open("a", encoding="utf-8") as archivo:
+            archivo.write(json.dumps(evento, ensure_ascii=False, allow_nan=False) + "\n")
 
 
 class CantonDia(BaseModel):
@@ -60,7 +121,9 @@ def predecir(entrada: CantonDia):
     datos["fecha"] = pd.to_datetime(datos["fecha"])
     datos = agregar_features(datos)
     prediccion = float(modelo.predict(datos[NUMERICAS + CATEGORICAS + YA_LISTAS])[0])
-    return {"cod_canton": entrada.cod_canton, "fecha_corte": entrada.fecha.isoformat(),
+    salida = {"id_prediccion": uuid4().hex, "cod_canton": entrada.cod_canton, "fecha_corte": entrada.fecha.isoformat(),
             "fecha_objetivo": (entrada.fecha + timedelta(days=3)).isoformat(),
             "horizonte_dias": 3, "emergencias_estimadas": round(prediccion, 4),
             "version_modelo": version_modelo, "run_id": run_id, "huella_modelo": huella_modelo}
+    registrar_prediccion(entrada, salida)
+    return salida
