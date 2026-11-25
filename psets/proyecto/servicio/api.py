@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from modelado.pipeline_proyecto import agregar_features, NUMERICAS, CATEGORICAS, YA_LISTAS
+from servicio.deriva import FEATURES, MonitorDeDeriva
 
 RUTA_MODELO = Path(os.environ.get("RUTA_MODELO", str(Path(__file__).with_name("modelo.joblib"))))
 modelo = None
@@ -34,6 +35,13 @@ if RUTA_MODELO.exists():
 
 app = FastAPI(title="ECU911: volumen de emergencias a t+3")
 
+RUTA_REFERENCIA = Path(os.environ.get(
+    "RUTA_REFERENCIA_DERIVA", Path(__file__).with_name("referencia_deriva.json")
+))
+app.state.monitor_deriva = (
+    MonitorDeDeriva(json.loads(RUTA_REFERENCIA.read_text(encoding="utf-8")))
+    if RUTA_REFERENCIA.is_file() else None
+)
 
 RUTA_PREDICCIONES = Path(os.environ.get(
     "RUTA_PREDICCIONES", Path(__file__).resolve().parents[1] / "monitoreo/predicciones.jsonl"
@@ -76,6 +84,14 @@ def metricas():
         "latencia_p50_ms": round(float(latencias.quantile(0.50)), 3) if len(latencias) else None,
         "latencia_p95_ms": round(float(latencias.quantile(0.95)), 3) if len(latencias) else None,
     }
+
+
+@app.get("/deriva")
+def deriva():
+    monitor = app.state.monitor_deriva
+    if monitor is None:
+        raise HTTPException(status_code=503, detail="Referencia no disponible: ejecuta monitoreo.simular_deriva")
+    return monitor.estado()
 
 
 def registrar_prediccion(entrada, salida):
@@ -126,4 +142,6 @@ def predecir(entrada: CantonDia):
             "horizonte_dias": 3, "emergencias_estimadas": round(prediccion, 4),
             "version_modelo": version_modelo, "run_id": run_id, "huella_modelo": huella_modelo}
     registrar_prediccion(entrada, salida)
+    if app.state.monitor_deriva is not None:
+        app.state.monitor_deriva.registrar(entrada.model_dump(include=set(FEATURES)))
     return salida

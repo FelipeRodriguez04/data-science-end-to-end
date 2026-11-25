@@ -9,6 +9,7 @@ from sklearn.dummy import DummyRegressor
 from sklearn.pipeline import Pipeline
 
 from servicio import api
+from servicio.deriva import MonitorDeDeriva
 from modelado.pipeline_proyecto import agregar_features, construir_preparacion, NUMERICAS, CATEGORICAS, YA_LISTAS
 
 ENTRADA = {
@@ -23,6 +24,15 @@ def cliente(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "RUTA_PREDICCIONES", tmp_path / "predicciones.jsonl")
     monkeypatch.setattr(api.app.state, "latencias", api.deque(maxlen=api.VENTANA_LATENCIA))
     monkeypatch.setattr(api.app.state, "conteos", dict.fromkeys(api.app.state.conteos, 0))
+    configuracion = {
+        "ventana": 4,
+        "umbral": 0.15,
+        "referencia": {
+            "n_emergencias": {"cortes": [20], "proporciones": [0.5, 0.5, 0.0]},
+            "media_prev_7d": {"cortes": [20], "proporciones": [0.5, 0.5, 0.0]},
+        },
+    }
+    monkeypatch.setattr(api.app.state, "monitor_deriva", MonitorDeDeriva(configuracion))
     datos = pd.DataFrame([ENTRADA, ENTRADA])
     datos["fecha"] = pd.to_datetime(datos["fecha"])
     datos = agregar_features(datos)
@@ -108,3 +118,27 @@ def test_metricas_separan_validacion_y_servidor(cliente, monkeypatch):
     assert respuesta["errores_validacion"] == respuesta["errores_servidor"] == 1
     assert 0 <= respuesta["latencia_p50_ms"] <= respuesta["latencia_p95_ms"]
     assert len(api.RUTA_PREDICCIONES.read_text().splitlines()) == 1
+
+
+def test_deriva_alerta_con_ventana_alejada_y_se_recupera(cliente):
+    assert cliente.get("/deriva").json()["psi"] == {}
+    assert cliente.post("/predecir", json={}).status_code == 422
+    sesgada = {**ENTRADA, "n_emergencias": 500, "media_prev_7d": 500}
+    for _ in range(3):
+        assert cliente.post("/predecir", json=sesgada).status_code == 200
+    parcial = cliente.get("/deriva").json()
+    assert parcial["predicciones_en_ventana"] == 3
+    assert parcial["alerta"] is False
+
+    assert cliente.post("/predecir", json=sesgada).status_code == 200
+    completa = cliente.get("/deriva").json()
+    assert completa["predicciones_en_ventana"] == completa["ventana"] == 4
+    assert completa["alerta"] is True
+    assert all(valor > completa["umbral"] for valor in completa["psi"].values())
+
+    for entrada in [ENTRADA, sesgada, ENTRADA, sesgada]:
+        assert cliente.post("/predecir", json=entrada).status_code == 200
+    recuperada = cliente.get("/deriva").json()
+    assert recuperada["predicciones_en_ventana"] == 4
+    assert recuperada["psi"] == {"n_emergencias": 0.0, "media_prev_7d": 0.0}
+    assert recuperada["alerta"] is False

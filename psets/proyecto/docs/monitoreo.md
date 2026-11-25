@@ -52,3 +52,32 @@ Se reprodujeron seis peticiones sobre cortes del 20 y 27 de agosto de 2025, para
 Estas cifras corresponden a tres cantones seleccionados y un solo día objetivo por semana. El MAE del conjunto de evaluación de Semana 11 cubre toda la partición temporal. La reproducción demuestra el cruce y el cálculo, y los tiempos corresponden a una ejecución local con TestClient.
 
 La proporción de históricos faltantes permite detectar problemas de disponibilidad de las entradas antes de conocer la verdad. Si el modelo subestima sistemáticamente un cantón con entradas completas, los códigos HTTP, la latencia y esa señal indirecta pueden seguir normales. El error por cantón y el costo asimétrico permiten investigar ese patrón cuando llegan los conteos.
+
+## Deriva
+
+El pronóstico se solicita por cantón al cierre de cada día. Se usó como ventana un lote típico de **224 predicciones** y como referencia la partición de entrenamiento. Para `n_emergencias` y `media_prev_7d` se guardaron los cortes de los deciles y sus proporciones, con una casilla adicional para faltantes. En cada casilla el PSI aplica un mínimo de 0,0001 a las proporciones para calcular el logaritmo.
+
+La simulación usó **377 días de prueba** del 17 de agosto de 2025 al 28 de agosto de 2026, con el bosque exportado como versión 1. Cada día se midió con el lote histórico y con dos perturbaciones. Para simular más solicitudes de cantones de alta demanda, se remuestreó con reemplazo dentro del día, dando peso 4 a los 23 cantones del decil superior por conteo diario medio de entrenamiento. Cada solicitud conservó su conteo real a t+3. Para simular el inicio de un nuevo criterio de registro, se aumentó el conteo objetivo un 20 % y se redondeó a unidades, usando las entradas históricas y los pronósticos del mismo día.
+
+| Escenario | PSI de conteo del día, media / máximo | PSI de media de 7 días, media / máximo | MAE medio (emergencias por cantón y día) | Ventanas con alerta |
+|---|---:|---:|---:|---:|
+| Histórico | 0,047671 / 0,341947 | 0,038236 / 0,092569 | 5,632802 | 0 de 377 |
+| Deriva de datos por mezcla de solicitudes | 0,309946 / 0,908786 | 0,324297 / 0,544014 | 10,915329 | 172 de 377 (45,6 %) |
+| Deriva conceptual por conteo objetivo +20 % | 0,047671 / 0,341947 | 0,038236 / 0,092569 | 9,770957 | 0 de 377 |
+
+Se eligió **PSI > 0,35** para cualquiera de las dos variables, redondeando hacia arriba el mayor PSI histórico (0,341947) a la centésima. El máximo de 0,908786 en la mezcla sesgada muestra que parte de esas ventanas se separa del histórico. Este umbral dio cero alertas en los lotes históricos de calibración y detectó 172 de los 377 lotes sesgados. La falsa alarma futura puede variar. La evaluación por día completo tampoco estima la frecuencia en cada posición de la ventana móvil.
+
+`GET /deriva` muestra el PSI calculado sobre las últimas 224 predicciones exitosas del proceso. Mientras se llena la ventana, muestra el PSI disponible con la alerta apagada. La ventana se reinicia al reiniciar el proceso. Al revisar un lote diario, conviene consultar la ruta después de recibir las 224 predicciones.
+
+La prueba HTTP con el modelo exportado dio PSI de **0,052387** y **0,029227** en el lote del 17 de agosto de 2025, con la alerta apagada. Al volver a enviar 224 solicitudes remuestreadas con peso 10 para los conteos del decil superior de ese día, el PSI subió a **1,065848** y **0,799196** y la alerta se encendió.
+
+La alerta deja sin detectar un cambio en el conteo objetivo con entradas idénticas. También puede pasar por alto cambios en otras variables o en la relación entre las dos variables aunque cada distribución marginal se mantenga. El MAE semanal y el costo asimétrico permiten diagnosticar el daño cuando llega la verdad. Si el PSI sube y el MAE se mantiene con cobertura suficiente, se revisa la mezcla de cantones, los faltantes y el error por segmento antes de decidir si hace falta actualizar el modelo.
+
+Desde `psets/proyecto/`, con el modelo exportado y la tabla histórica disponibles:
+
+```bash
+python -m monitoreo.simular_deriva
+curl -sS http://localhost:8002/deriva
+```
+
+El script recalcula `servicio/referencia_deriva.json`. Puede recibir `--datos`, `--modelo` y `--salida` para usar otras rutas. Si regeneras la referencia, reinicia la API o reconstruye la imagen para cargarla. `RUTA_REFERENCIA_DERIVA` permite apuntar a otra referencia al arrancar.
