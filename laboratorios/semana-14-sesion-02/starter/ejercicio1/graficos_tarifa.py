@@ -13,39 +13,60 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 import pandas as pd
 
 MAE_PRUEBA = 1.17
 
 viajes = pd.read_csv("tarifas_noviembre.csv")
-viajes["semana"] = pd.to_datetime(viajes["fecha_hora_inicio"]).dt.to_period("W").dt.start_time.dt.strftime("%d/%m")
+viajes["semana"] = pd.to_datetime(viajes["fecha_hora_inicio"]).dt.to_period("W").dt.start_time
 viajes["error"] = (viajes["tarifa_cobrada"] - viajes["tarifa_estimada"]).abs()
 viajes["diferencia"] = viajes["tarifa_cobrada"] - viajes["tarifa_estimada"]
+# En centavos, una tarifa exactamente 20 % mayor queda fuera del conteo.
+centavos_cobrados = (100 * viajes["tarifa_cobrada"]).round()
+centavos_estimados = (100 * viajes["tarifa_estimada"]).round()
+viajes["pagan_20_mas"] = 5 * centavos_cobrados > 6 * centavos_estimados
 
-# TODO 1: el resumen por semana: "viajes" (cuantos), "mae" (promedio de
-# error), "pagan_20_mas" (fraccion de viajes en que la tarifa cobrada
-# supera en mas de 20% a la estimada) y "diferencia" (promedio de
-# diferencia, en dolares). Redondea a 3 decimales.
-resumen = pd.DataFrame(columns=["viajes", "mae", "pagan_20_mas", "diferencia"])
+medidas = viajes.groupby("semana").agg(
+    viajes=("error", "size"),
+    mae=("error", "mean"),
+    pagan_20_mas=("pagan_20_mas", "mean"),
+    diferencia=("diferencia", "mean"),
+)
+medidas.index = medidas.index.strftime("%d/%m").rename("semana")
+resumen = medidas.round(3)
 print(resumen.to_string())
 
-# El grafico tecnico: el MAE por semana, separado por tipo de tarifa, con
-# el MAE de prueba como referencia.
 por_tipo = viajes.groupby(["semana", "es_tarifa_fija"])["error"].mean().unstack()
-por_tipo.columns = ["Taximetro", "Tarifa fija"]
-figura, eje = plt.subplots(figsize=(7, 4))
-# TODO 2: barras agrupadas con por_tipo.plot(kind="bar", ax=eje), una linea
-# horizontal en MAE_PRUEBA (eje.axhline, punteada, con label), la
-# leyenda, y titulo y ejes que digan que se mide y en que unidad.
+por_tipo = por_tipo.rename(columns={0: "Taxímetro", 1: "Tarifa fija"})
+por_tipo.index = por_tipo.index.strftime("%d/%m")
+figura, eje = plt.subplots(figsize=(7.6, 4.2))
+por_tipo.plot(kind="bar", ax=eje, color=["#206A89", "#B68127"], rot=0, width=0.72)
+eje.axhline(MAE_PRUEBA, color="#363E47", linestyle="--", label="MAE global de prueba (1,17 USD)")
+eje.set(title="Error absoluto medio por semana y tipo de tarifa", xlabel="Inicio de semana", ylabel="MAE (USD por viaje)")
+eje.grid(axis="y", color="#E1E7ED", linewidth=0.8)
+eje.set_axisbelow(True)
+eje.legend(frameon=False, loc="upper left")
 figura.tight_layout()
 figura.savefig("grafico_tecnico.png", dpi=150)
+plt.close(figura)
 
-# El grafico ejecutivo: una sola serie, con el mensaje en el titulo.
-figura, eje = plt.subplots(figsize=(7, 4))
-# TODO 3: una barra por semana con el porcentaje de pasajeros que pagaron mas
-# de 20% sobre lo estimado (resumen["pagan_20_mas"] * 100), las dos
-# ultimas semanas de otro color, el valor encima de cada barra, y un
-# titulo que diga la conclusion, no la metrica.
+figura, eje = plt.subplots(figsize=(7.6, 4.2))
+porcentajes = medidas["pagan_20_mas"] * 100
+colores = ["#9DAEBB"] * len(porcentajes)
+colores[-2:] = ["#A33D27"] * min(len(porcentajes), 2)
+barras = eje.bar(porcentajes.index, porcentajes, color=colores, width=0.55)
+etiquetas = [f"{valor:.1f}".replace(".", ",") + " %" for valor in porcentajes]
+eje.bar_label(barras, labels=etiquetas, padding=5, fontweight="bold")
+eje.set_ylim(0, max(10, porcentajes.max() * 1.20))
+eje.yaxis.set_major_formatter(PercentFormatter(100, decimals=0))
+eje.set(
+    title="Desde mediados de noviembre, más viajes superaron el precio estimado",
+    xlabel="Inicio de semana",
+    ylabel="Viajes con cobro más de 20 %\npor encima de lo estimado",
+)
+eje.spines[["top", "right"]].set_visible(False)
 figura.tight_layout()
 figura.savefig("grafico_ejecutivo.png", dpi=150)
+plt.close(figura)
 print("Graficos guardados: grafico_tecnico.png y grafico_ejecutivo.png")
